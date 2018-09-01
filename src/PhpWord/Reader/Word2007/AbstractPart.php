@@ -268,12 +268,49 @@ abstract class AbstractPart
             $xmlReader->registerNamespace('pic', 'http://schemas.openxmlformats.org/drawingml/2006/picture');
             $xmlReader->registerNamespace('a', 'http://schemas.openxmlformats.org/drawingml/2006/main');
 
-            $name = $xmlReader->getAttribute('name', $node, 'wp:inline/a:graphic/a:graphicData/pic:pic/pic:nvPicPr/pic:cNvPr');
-            $embedId = $xmlReader->getAttribute('r:embed', $node, 'wp:inline/a:graphic/a:graphicData/pic:pic/pic:blipFill/a:blip');
+            $inlineOrAnchor = $xmlReader->elementExists( 'wp:inline', $node ) ? 'wp:inline' : 'wp:anchor';
+
+            $style = array();
+            $style['hPos'] = \PhpOffice\PhpWord\Style\Image::POS_LEFT;
+                          // \PhpOffice\PhpWord\Style\Image::POS_RIGHT;
+            $style['width'] = 200;
+            $style['height'] = 100;
+            $style['unit'] = \PhpOffice\PhpWord\Style\Image::UNIT_PX;
+
+            $style['hPosRelTo'] = \PhpOffice\PhpWord\Style\Image::POS_RELTO_PAGE;
+
+            $style['pos'] = \PhpOffice\PhpWord\Style\Image::POS_RELATIVE;
+
+            $style['wrap'] = \PhpOffice\PhpWord\Style\Image::WRAP_TIGHT;
+
+            $style['overlap'] = true;
+
+
+/*
+            $style['alignment'] = "";   // See \PhpOffice\PhpWord\SimpleType\Jc class for the details.
+            $style['marginLeft'] = "";  // Left margin in inches, can be negative.
+            $style['marginTop'] = "";   // Top margin in inches, can be negative.
+            $style['wrappingStyle'] = "";  // Wrapping style, inline, square, tight, behind, or infront.
+            $style['wrapDistanceTop'] = "";  // Top text wrapping in pixels.
+            $style['wrapDistanceBottom'] = "";  //  Bottom text wrapping in pixels.
+            $style['wrapDistanceLeft'] = "";  //  Left text wrapping in pixels.
+            $style['wrapDistanceRight'] = "";  //  Right text wrapping in pixels.
+
+            $style['wrappingStyle'] = "square";
+
+ */
+
+
+
+
+//var_dump( $xmlReader->elementExists( 'wp:inline', $node ), $xmlReader->elementExists( 'wp:anchor', $node )
+//    );exit;
+            $name = $xmlReader->getAttribute('name', $node, $inlineOrAnchor.'/a:graphic/a:graphicData/pic:pic/pic:nvPicPr/pic:cNvPr');
+            $embedId = $xmlReader->getAttribute('r:embed', $node, $inlineOrAnchor.'/a:graphic/a:graphicData/pic:pic/pic:blipFill/a:blip');
             $target = $this->getMediaTarget($docPart, $embedId);
             if (!is_null($target)) {
                 $imageSource = "zip://{$this->docFile}#{$target}";
-                $parent->addImage($imageSource, null, false, $name);
+                $parent->addImage($imageSource, $style, false, $name);
             }
         } elseif ($node->nodeName == 'w:object') {
             // Object
