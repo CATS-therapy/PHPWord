@@ -270,20 +270,153 @@ abstract class AbstractPart
 
             $inlineOrAnchor = $xmlReader->elementExists( 'wp:inline', $node ) ? 'wp:inline' : 'wp:anchor';
 
+/*
+    **
+     * General positioning options.
+     *
+     * @const string
+     *
+    const POS_ABSOLUTE = 'absolute';
+    const POS_RELATIVE = 'relative';
+
+    **
+     * Horizontal/vertical value
+     *
+     * @const string
+     *
+    const POS_CENTER = 'center';
+    const POS_LEFT = 'left';
+    const POS_RIGHT = 'right';
+    const POS_TOP = 'top';
+    const POS_BOTTOM = 'bottom';
+    const POS_INSIDE = 'inside';
+    const POS_OUTSIDE = 'outside';
+
+    **
+     * Position relative to
+     *
+     * @const string
+     *
+    const POS_RELTO_MARGIN = 'margin';
+    const POS_RELTO_PAGE = 'page';
+    const POS_RELTO_COLUMN = 'column'; // horizontal only
+    const POS_RELTO_CHAR = 'char'; // horizontal only
+    const POS_RELTO_TEXT = 'text'; // vertical only
+    const POS_RELTO_LINE = 'line'; // vertical only
+    const POS_RELTO_LMARGIN = 'left-margin-area'; // horizontal only
+    const POS_RELTO_RMARGIN = 'right-margin-area'; // horizontal only
+    const POS_RELTO_TMARGIN = 'top-margin-area'; // vertical only
+    const POS_RELTO_BMARGIN = 'bottom-margin-area'; // vertical only
+    const POS_RELTO_IMARGIN = 'inner-margin-area';
+    const POS_RELTO_OMARGIN = 'outer-margin-area';
+
+    **
+     * Wrap type
+     *
+     * @const string
+     *
+    const WRAP_INLINE = 'inline';
+    const WRAP_SQUARE = 'square';
+    const WRAP_TIGHT = 'tight';
+    const WRAP_THROUGH = 'through';
+    const WRAP_TOPBOTTOM = 'topAndBottom';
+    const WRAP_BEHIND = 'behind';
+    const WRAP_INFRONT = 'infront';
+
+
+    const WRAPPING_STYLE_INLINE = self::WRAP_INLINE;
+    const WRAPPING_STYLE_SQUARE = self::WRAP_SQUARE;
+    const WRAPPING_STYLE_TIGHT = self::WRAP_TIGHT;
+    const WRAPPING_STYLE_BEHIND = self::WRAP_BEHIND;
+    const WRAPPING_STYLE_INFRONT = self::WRAP_INFRONT;
+
+    const POSITION_HORIZONTAL_LEFT = self::POS_LEFT;
+    const POSITION_HORIZONTAL_CENTER = self::POS_CENTER;
+    const POSITION_HORIZONTAL_RIGHT = self::POS_RIGHT;
+
+    const POSITION_VERTICAL_TOP = self::POS_TOP;
+    const POSITION_VERTICAL_CENTER = self::POS_CENTER;
+    const POSITION_VERTICAL_BOTTOM = self::POS_BOTTOM;
+    const POSITION_VERTICAL_INSIDE = self::POS_INSIDE;
+    const POSITION_VERTICAL_OUTSIDE = self::POS_OUTSIDE;
+
+    const POSITION_RELATIVE_TO_MARGIN = self::POS_RELTO_MARGIN;
+    const POSITION_RELATIVE_TO_PAGE = self::POS_RELTO_PAGE;
+    const POSITION_RELATIVE_TO_COLUMN = self::POS_RELTO_COLUMN;
+    const POSITION_RELATIVE_TO_CHAR = self::POS_RELTO_CHAR;
+    const POSITION_RELATIVE_TO_TEXT = self::POS_RELTO_TEXT;
+    const POSITION_RELATIVE_TO_LINE = self::POS_RELTO_LINE;
+    const POSITION_RELATIVE_TO_LMARGIN = self::POS_RELTO_LMARGIN;
+    const POSITION_RELATIVE_TO_RMARGIN = self::POS_RELTO_RMARGIN;
+    const POSITION_RELATIVE_TO_TMARGIN = self::POS_RELTO_TMARGIN;
+    const POSITION_RELATIVE_TO_BMARGIN = self::POS_RELTO_BMARGIN;
+    const POSITION_RELATIVE_TO_IMARGIN = self::POS_RELTO_IMARGIN;
+    const POSITION_RELATIVE_TO_OMARGIN = self::POS_RELTO_OMARGIN;
+
+    const POSITION_ABSOLUTE = self::POS_ABSOLUTE;
+    const POSITION_RELATIVE = self::POS_RELATIVE;
+
+ */
+
+
             $style = array();
+
+            /* wp:extent encodes the image size in EMU. Convert this to UNIT_PT.
+             */
+            if( $xmlReader->elementExists( ($e = $inlineOrAnchor.'/wp:extent'), $node ) ) {
+                if( ($a = $xmlReader->getAttribute('cx', $node, $e)) ) {
+                    $style['width'] = floatval($a) / 914400 * 72; // EMU converted to points
+                }
+                if( ($a = $xmlReader->getAttribute('cy', $node, $e)) ) {
+                    $style['height'] = floatval($a) / 914400 * 72;
+                }
+                $style['unit'] = \PhpOffice\PhpWord\Style\Image::UNIT_PT;
+            }
+
+
+            if( $inlineOrAnchor=='wp:anchor' && $xmlReader->elementExists( ($e = $inlineOrAnchor.'/wp:positionH'), $node ) ) {
+                if( ($a = $xmlReader->getAttribute('relativeFrom', $node, $e)) ) {
+                    $r = array( 'page'   => \PhpOffice\PhpWord\Style\Image::POS_RELTO_PAGE,
+                                'column' => \PhpOffice\PhpWord\Style\Image::POS_RELTO_COLUMN,
+                    );
+
+                    $style['hPosRelTo'] = @$r[$a] ?: $r['page'];
+
+                    if( $v = $xmlReader->getValue( $e.'/wp:posOffset', $node ) ) {
+                        $style['marginLeft'] = floatval($v) / 914400 * 72; // EMU converted to points
+                    }
+                }
+            }
+
+$style['positioning'] = \PhpOffice\PhpWord\Style\Image::POSITION_ABSOLUTE;
+$style['posHorizontal'] = 'absolute';
+$style['posVertical'] = 'absolute';
+
+
+
+
+
+            if( $inlineOrAnchor=='wp:anchor' && $xmlReader->elementExists( ($e = 'wp:anchor/wp:wrapSquare'), $node ) ) {
+                $style['wrappingStyle'] = 'square';
+            }
+            if( $inlineOrAnchor=='wp:anchor' && $xmlReader->elementExists( ($e = 'wp:anchor/wp:wrapTight'), $node ) ) {
+                $style['wrappingStyle'] = 'tight';
+            }
+            if( $inlineOrAnchor=='wp:anchor' && $xmlReader->elementExists( ($e = 'wp:anchor/wp:wrapThrough'), $node ) ) {
+                $style['wrappingStyle'] = 'infront';
+            }
+
+
+
+/*
             $style['hPos'] = \PhpOffice\PhpWord\Style\Image::POS_LEFT;
                           // \PhpOffice\PhpWord\Style\Image::POS_RIGHT;
-            $style['width'] = 200;
-            $style['height'] = 100;
-            $style['unit'] = \PhpOffice\PhpWord\Style\Image::UNIT_PX;
-
-            $style['hPosRelTo'] = \PhpOffice\PhpWord\Style\Image::POS_RELTO_PAGE;
-
             $style['pos'] = \PhpOffice\PhpWord\Style\Image::POS_RELATIVE;
 
             $style['wrap'] = \PhpOffice\PhpWord\Style\Image::WRAP_TIGHT;
 
             $style['overlap'] = true;
+*/
 
 
 /*
@@ -296,6 +429,27 @@ abstract class AbstractPart
             $style['wrapDistanceLeft'] = "";  //  Left text wrapping in pixels.
             $style['wrapDistanceRight'] = "";  //  Right text wrapping in pixels.
 
+   'width'            => round(\PhpOffice\PhpWord\Shared\Converter::cmToPixel(3)),
+        'height'           => round(\PhpOffice\PhpWord\Shared\Converter::cmToPixel(3)),
+        'positioning'      => \PhpOffice\PhpWord\Style\Image::POSITION_ABSOLUTE,
+        'posHorizontal'    => \PhpOffice\PhpWord\Style\Image::POSITION_HORIZONTAL_RIGHT,
+        'posVertical'    => \PhpOffice\PhpWord\Style\Image::POSITION_VERTICAL_TOP,
+        'posHorizontalRel' => \PhpOffice\PhpWord\Style\Image::POSITION_RELATIVE_TO_PAGE,
+        'posVerticalRel'   => \PhpOffice\PhpWord\Style\Image::POSITION_RELATIVE_TO_PAGE,
+        'marginLeft'       => round(\PhpOffice\PhpWord\Shared\Converter::cmToPixel(15.5)),
+        'marginTop'        => round(\PhpOffice\PhpWord\Shared\Converter::cmToPixel(1.55)),
+    )
+this might be necessary if positioning=POSIION_ABSOLUTE
+'posHorizontal' => 'absolute',
+'posVertical' => 'absolute',
+
+'width'            => 250,
+    'wrappingStyle'    => 'square',
+    'marginTop'        => 200,
+    'positioning'      => 'relative',
+    'posHorizontal'    => PhpOffice\PhpWord\Style\Image::POSITION_HORIZONTAL_RIGHT,
+    'posHorizontalRel' => 'margin',
+    'posVerticalRel'   => 'line',
             $style['wrappingStyle'] = "square";
 
  */
@@ -303,8 +457,9 @@ abstract class AbstractPart
 
 
 
-//var_dump( $xmlReader->elementExists( 'wp:inline', $node ), $xmlReader->elementExists( 'wp:anchor', $node )
-//    );exit;
+//var_dump($parent);
+//var_dump( $style );
+//exit;
             $name = $xmlReader->getAttribute('name', $node, $inlineOrAnchor.'/a:graphic/a:graphicData/pic:pic/pic:nvPicPr/pic:cNvPr');
             $embedId = $xmlReader->getAttribute('r:embed', $node, $inlineOrAnchor.'/a:graphic/a:graphicData/pic:pic/pic:blipFill/a:blip');
             $target = $this->getMediaTarget($docPart, $embedId);
