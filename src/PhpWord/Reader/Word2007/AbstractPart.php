@@ -269,6 +269,134 @@ abstract class AbstractPart
             $xmlReader->registerNamespace('a', 'http://schemas.openxmlformats.org/drawingml/2006/main');
 
             $inlineOrAnchor = $xmlReader->elementExists( 'wp:inline', $node ) ? 'wp:inline' : 'wp:anchor';
+            $style = $this->readDrawingStyle( $xmlReader, $node, $inlineOrAnchor );
+
+            $name = $xmlReader->getAttribute('name', $node, $inlineOrAnchor.'/a:graphic/a:graphicData/pic:pic/pic:nvPicPr/pic:cNvPr');
+            $embedId = $xmlReader->getAttribute('r:embed', $node, $inlineOrAnchor.'/a:graphic/a:graphicData/pic:pic/pic:blipFill/a:blip');
+            $target = $this->getMediaTarget($docPart, $embedId);
+            if (!is_null($target)) {
+                $imageSource = "zip://{$this->docFile}#{$target}";
+                $parent->addImage($imageSource, $style, false, $name);
+            }
+        } elseif ($node->nodeName == 'w:object') {
+            // Object
+            $rId = $xmlReader->getAttribute('r:id', $node, 'o:OLEObject');
+            // $rIdIcon = $xmlReader->getAttribute('r:id', $domNode, 'w:object/v:shape/v:imagedata');
+            $target = $this->getMediaTarget($docPart, $rId);
+            if (!is_null($target)) {
+                $textContent = "&lt;Object: {$target}>";
+                $parent->addText($textContent, $fontStyle, $paragraphStyle);
+            }
+        } elseif ($node->nodeName == 'w:br') {
+            $parent->addTextBreak();
+        } elseif ($node->nodeName == 'w:tab') {
+            $parent->addText("\t");
+        } elseif ($node->nodeName == 'w:t' || $node->nodeName == 'w:delText') {
+            // TextRun
+            $textContent = htmlspecialchars($xmlReader->getValue('.', $node), ENT_QUOTES, 'UTF-8');
+
+            if ($runParent->nodeName == 'w:hyperlink') {
+                $rId = $xmlReader->getAttribute('r:id', $runParent);
+                $target = $this->getMediaTarget($docPart, $rId);
+                if (!is_null($target)) {
+                    $parent->addLink($target, $textContent, $fontStyle, $paragraphStyle);
+                }
+            } else {
+                /** @var AbstractElement $element */
+                $element = $parent->addText($textContent, $fontStyle, $paragraphStyle);
+                if (in_array($runParent->nodeName, array('w:ins', 'w:del'))) {
+                    $type = ($runParent->nodeName == 'w:del') ? TrackChange::DELETED : TrackChange::INSERTED;
+                    $author = $runParent->getAttribute('w:author');
+                    $date = \DateTime::createFromFormat('Y-m-d\TH:i:s\Z', $runParent->getAttribute('w:date'));
+                    $element->setChangeInfo($type, $author, $date);
+                }
+            }
+        }
+    }
+
+    /**
+     * Reads w:drawing style parameters
+     *
+     * @param XMLReader $xmlReader
+     * @param \DOMElement $node
+     * @param string $inlineOrAnchor
+     * @return array
+     */
+    private function readDrawingStyle(XMLReader $xmlReader, \DOMElement $node, $inlineOrAnchor)
+    {
+        /* Reads position, size, wrapping, etc, styles from the current w:drawing node and converts them to styles used by addImage().
+         */
+        $style = array();
+
+        /* wp:extent encodes the image size in EMU. Convert this to UNIT_PT.
+         *
+         * Used by both wp:anchor and wp:inline
+         */
+        if( $xmlReader->elementExists( ($e = $inlineOrAnchor.'/wp:extent'), $node ) ) {
+            if( ($a = $xmlReader->getAttribute('cx', $node, $e)) ) {
+                $style['width'] = floatval($a) / 914400 * 72; // EMU converted to points
+            }
+            if( ($a = $xmlReader->getAttribute('cy', $node, $e)) ) {
+                $style['height'] = floatval($a) / 914400 * 72;
+            }
+            $style['unit'] = \PhpOffice\PhpWord\Style\Image::UNIT_PT;
+        }
+
+
+        /* The following styles are only used by wp:anchor because they don't make sense for an inline image
+         */
+        if( $inlineOrAnchor == 'wp:anchor' ) {
+            /* wp:positionH contains codes for the horizontal offset and the place from which that offset is relative
+             */
+            if( $xmlReader->elementExists( ($e = 'wp:anchor/wp:positionH'), $node ) ) {
+                if( ($a = $xmlReader->getAttribute('relativeFrom', $node, $e)) ) {
+                    $r = array( 'page'   => \PhpOffice\PhpWord\Style\Image::POS_RELTO_PAGE,
+                                'column' => \PhpOffice\PhpWord\Style\Image::POS_RELTO_COLUMN,
+                    );
+
+                    $style['hPosRelTo'] = @$r[$a] ?: $r['page'];
+
+                    if( $v = $xmlReader->getValue( $e.'/wp:posOffset', $node ) ) {
+                        $style['marginLeft'] = floatval($v) / 914400 * 72; // EMU converted to points
+                    }
+
+                    // We're not sure why, but this seems to be necessary for addImage() to use marginLeft correctly
+                    $style['positioning'] = \PhpOffice\PhpWord\Style\Image::POSITION_ABSOLUTE;
+                    $style['posHorizontal'] = 'absolute';
+                    $style['posVertical'] = 'absolute';
+                }
+            }
+
+            /* wp:positionV contains codes for the vertical offset and the place from which that offset is relative
+             */
+            if( $xmlReader->elementExists( ($e = 'wp:anchor/wp:positionV'), $node ) ) {
+// todo: positionV
+                    // We're not sure why, but this seems to be necessary for addImage() to use marginLeft correctly
+                    $style['positioning'] = \PhpOffice\PhpWord\Style\Image::POSITION_ABSOLUTE;
+                    $style['posHorizontal'] = 'absolute';
+                    $style['posVertical'] = 'absolute';
+            }
+
+            /* Wrapping style is encoded using a different wp: element for each style
+             *
+             * The following styles are defined in \PhpOffice\PhpWord\Style\Image and \PhpOffice\PhpWord\Style\Frame
+             */
+            $r = array( 'wp:foofoowrapInline' => \PhpOffice\PhpWord\Style\Image::WRAPPING_STYLE_INLINE,
+                        'wp:wrapSquare'        => \PhpOffice\PhpWord\Style\Image::WRAPPING_STYLE_SQUARE,
+                        'wp:wrapTight'         => \PhpOffice\PhpWord\Style\Image::WRAPPING_STYLE_TIGHT,
+                        'wp:foofoowrapBehind'  => \PhpOffice\PhpWord\Style\Image::WRAPPING_STYLE_BEHIND,
+                        'wp:foofoowrapInfront' => \PhpOffice\PhpWord\Style\Image::WRAPPING_STYLE_INFRONT,
+                        // the next two are inherited from Frame and seem to be applicable here
+                        'wp:wrapThrough'       => \PhpOffice\PhpWord\Style\Image::WRAP_THROUGH,
+                        'wp:foofoowrapTopBottom' => \PhpOffice\PhpWord\Style\Image::WRAP_TOPBOTTOM
+                );
+            foreach( $r as $e => $ws ) {
+                if( $xmlReader->elementExists( "wp:anchor/".$e, $node ) ) {
+                    $style['wrappingStyle'] = $ws;
+                    break;
+                }
+            }
+        }
 
 /*
     **
@@ -310,26 +438,6 @@ abstract class AbstractPart
     const POS_RELTO_IMARGIN = 'inner-margin-area';
     const POS_RELTO_OMARGIN = 'outer-margin-area';
 
-    **
-     * Wrap type
-     *
-     * @const string
-     *
-    const WRAP_INLINE = 'inline';
-    const WRAP_SQUARE = 'square';
-    const WRAP_TIGHT = 'tight';
-    const WRAP_THROUGH = 'through';
-    const WRAP_TOPBOTTOM = 'topAndBottom';
-    const WRAP_BEHIND = 'behind';
-    const WRAP_INFRONT = 'infront';
-
-
-    const WRAPPING_STYLE_INLINE = self::WRAP_INLINE;
-    const WRAPPING_STYLE_SQUARE = self::WRAP_SQUARE;
-    const WRAPPING_STYLE_TIGHT = self::WRAP_TIGHT;
-    const WRAPPING_STYLE_BEHIND = self::WRAP_BEHIND;
-    const WRAPPING_STYLE_INFRONT = self::WRAP_INFRONT;
-
     const POSITION_HORIZONTAL_LEFT = self::POS_LEFT;
     const POSITION_HORIZONTAL_CENTER = self::POS_CENTER;
     const POSITION_HORIZONTAL_RIGHT = self::POS_RIGHT;
@@ -357,55 +465,6 @@ abstract class AbstractPart
     const POSITION_RELATIVE = self::POS_RELATIVE;
 
  */
-
-
-            $style = array();
-
-            /* wp:extent encodes the image size in EMU. Convert this to UNIT_PT.
-             */
-            if( $xmlReader->elementExists( ($e = $inlineOrAnchor.'/wp:extent'), $node ) ) {
-                if( ($a = $xmlReader->getAttribute('cx', $node, $e)) ) {
-                    $style['width'] = floatval($a) / 914400 * 72; // EMU converted to points
-                }
-                if( ($a = $xmlReader->getAttribute('cy', $node, $e)) ) {
-                    $style['height'] = floatval($a) / 914400 * 72;
-                }
-                $style['unit'] = \PhpOffice\PhpWord\Style\Image::UNIT_PT;
-            }
-
-
-            if( $inlineOrAnchor=='wp:anchor' && $xmlReader->elementExists( ($e = $inlineOrAnchor.'/wp:positionH'), $node ) ) {
-                if( ($a = $xmlReader->getAttribute('relativeFrom', $node, $e)) ) {
-                    $r = array( 'page'   => \PhpOffice\PhpWord\Style\Image::POS_RELTO_PAGE,
-                                'column' => \PhpOffice\PhpWord\Style\Image::POS_RELTO_COLUMN,
-                    );
-
-                    $style['hPosRelTo'] = @$r[$a] ?: $r['page'];
-
-                    if( $v = $xmlReader->getValue( $e.'/wp:posOffset', $node ) ) {
-                        $style['marginLeft'] = floatval($v) / 914400 * 72; // EMU converted to points
-                    }
-                }
-            }
-
-$style['positioning'] = \PhpOffice\PhpWord\Style\Image::POSITION_ABSOLUTE;
-$style['posHorizontal'] = 'absolute';
-$style['posVertical'] = 'absolute';
-
-
-
-
-
-            if( $inlineOrAnchor=='wp:anchor' && $xmlReader->elementExists( ($e = 'wp:anchor/wp:wrapSquare'), $node ) ) {
-                $style['wrappingStyle'] = 'square';
-            }
-            if( $inlineOrAnchor=='wp:anchor' && $xmlReader->elementExists( ($e = 'wp:anchor/wp:wrapTight'), $node ) ) {
-                $style['wrappingStyle'] = 'tight';
-            }
-            if( $inlineOrAnchor=='wp:anchor' && $xmlReader->elementExists( ($e = 'wp:anchor/wp:wrapThrough'), $node ) ) {
-                $style['wrappingStyle'] = 'infront';
-            }
-
 
 
 /*
@@ -460,47 +519,7 @@ this might be necessary if positioning=POSIION_ABSOLUTE
 //var_dump($parent);
 //var_dump( $style );
 //exit;
-            $name = $xmlReader->getAttribute('name', $node, $inlineOrAnchor.'/a:graphic/a:graphicData/pic:pic/pic:nvPicPr/pic:cNvPr');
-            $embedId = $xmlReader->getAttribute('r:embed', $node, $inlineOrAnchor.'/a:graphic/a:graphicData/pic:pic/pic:blipFill/a:blip');
-            $target = $this->getMediaTarget($docPart, $embedId);
-            if (!is_null($target)) {
-                $imageSource = "zip://{$this->docFile}#{$target}";
-                $parent->addImage($imageSource, $style, false, $name);
-            }
-        } elseif ($node->nodeName == 'w:object') {
-            // Object
-            $rId = $xmlReader->getAttribute('r:id', $node, 'o:OLEObject');
-            // $rIdIcon = $xmlReader->getAttribute('r:id', $domNode, 'w:object/v:shape/v:imagedata');
-            $target = $this->getMediaTarget($docPart, $rId);
-            if (!is_null($target)) {
-                $textContent = "&lt;Object: {$target}>";
-                $parent->addText($textContent, $fontStyle, $paragraphStyle);
-            }
-        } elseif ($node->nodeName == 'w:br') {
-            $parent->addTextBreak();
-        } elseif ($node->nodeName == 'w:tab') {
-            $parent->addText("\t");
-        } elseif ($node->nodeName == 'w:t' || $node->nodeName == 'w:delText') {
-            // TextRun
-            $textContent = htmlspecialchars($xmlReader->getValue('.', $node), ENT_QUOTES, 'UTF-8');
-
-            if ($runParent->nodeName == 'w:hyperlink') {
-                $rId = $xmlReader->getAttribute('r:id', $runParent);
-                $target = $this->getMediaTarget($docPart, $rId);
-                if (!is_null($target)) {
-                    $parent->addLink($target, $textContent, $fontStyle, $paragraphStyle);
-                }
-            } else {
-                /** @var AbstractElement $element */
-                $element = $parent->addText($textContent, $fontStyle, $paragraphStyle);
-                if (in_array($runParent->nodeName, array('w:ins', 'w:del'))) {
-                    $type = ($runParent->nodeName == 'w:del') ? TrackChange::DELETED : TrackChange::INSERTED;
-                    $author = $runParent->getAttribute('w:author');
-                    $date = \DateTime::createFromFormat('Y-m-d\TH:i:s\Z', $runParent->getAttribute('w:date'));
-                    $element->setChangeInfo($type, $author, $date);
-                }
-            }
-        }
+        return( $style );
     }
 
     /**
